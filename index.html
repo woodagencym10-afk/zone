@@ -20,7 +20,6 @@
     #map { width: 100%; height: 100%; filter: blur(3px) saturate(0.8); opacity: 0.5; transition: filter .25s ease, opacity .25s ease; }
     #map.unblur { filter: none; opacity: 1; }
 
-    /* Модалки */
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
     .card { width: min(640px, 92vw); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 18px; }
     .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
@@ -29,7 +28,6 @@
     .input { width: 100%; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size: 15px; }
     .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:12px; }
 
-    /* Результат по центру */
     #result-modal .msg { padding: 12px; border-radius: 12px; font-weight: 600; }
     #result-modal .ok { background:#e8fff4; border:1px solid #b7f2d4; color:#116b3b; }
     #result-modal .warn { background:#fffbe6; border:1px solid #ffe58f; color:#8a6d00; }
@@ -42,7 +40,7 @@
       <span class="badge ok">Старт: Склад Львів (вул. Кільцева, 60)</span>
       <input id="dest-input" class="pill" placeholder="Введіть місце призначення" />
       <button id="locate" class="btn">Моє місцезнаходження</button>
-      <button id="reset" class="btn secondary" title="Очистити та почати спочатку">Скинути</button>
+      <button id="reset" class="btn secondary">Скинути</button>
       <div id="status" class="badge warn">Очікую вибір…</div>
     </div>
     <div id="mapwrap">
@@ -50,7 +48,6 @@
     </div>
   </div>
 
-  <!-- Модальне вікно на старті -->
   <div id="start-modal" class="modal">
     <div class="card">
       <h3 style="margin:0 0 8px 0">Початкові дані</h3>
@@ -76,7 +73,6 @@
     </div>
   </div>
 
-  <!-- Модалка результату по центру -->
   <div id="result-modal" class="modal" style="display:none;">
     <div class="card">
       <div id="result-text" class="msg ok">—</div>
@@ -88,16 +84,15 @@
 
   <script>
     const BASE = { lat: 49.8397, lng: 24.0297 };
-    const DIST_THRESH = { green_km: 50, yellow_km: 100 };
 
-    const CORRIDOR_REQUESTS = [
-      { name: 'E40/M06 (Львів — Рівне)', origin: 'Львів, Україна', destination: 'Рівне, Україна', waypoints: ['Броди, Україна', 'Дубно, Україна'] },
-      { name: 'H17 (Львів — Луцьк)', origin: 'Львів, Україна', destination: 'Луцьк, Україна', waypoints: ['Горохів, Україна'] },
-      { name: 'P15 (Львів — Червоноград — Ковель)', origin: 'Львів, Україна', destination: 'Ковель, Україна', waypoints: ['Червоноград, Україна', 'Володимир, Україна'] },
-      { name: 'H02 (Львів — Тернопіль)', origin: 'Львів, Україна', destination: 'Тернопіль, Україна', waypoints: [] }
+    // Міста-коридори з лімітом 50 км
+    const CITY_LIMITS = [
+      { name: 'Луцьк', lat: 50.7472, lng: 25.3254 },
+      { name: 'Рівне', lat: 50.6199, lng: 26.2516 },
+      { name: 'Тернопіль', lat: 49.5535, lng: 25.5948 }
     ];
 
-    let map, directionsService, directionsRenderer, marker, builtCorridors = [];
+    let map, directionsService, directionsRenderer, marker;
 
     function initMap() {
       const bounds = new google.maps.LatLngBounds();
@@ -111,8 +106,6 @@
 
       directionsService = new google.maps.DirectionsService();
       directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, polylineOptions: { strokeColor: '#1976d2', strokeOpacity: 0.7, strokeWeight: 4 } });
-
-      buildCorridors();
 
       const input = document.getElementById('dest-input');
       const ac = new google.maps.places.Autocomplete(input, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
@@ -146,37 +139,34 @@
     }
 
     async function proceedToDestination(dest, label){
-      // Прокладаємо маршрут (для фону) і розмиваємо карту
       try {
         const res = await directionsService.route({ origin: BASE, destination: dest, travelMode: google.maps.TravelMode.DRIVING });
         directionsRenderer.setDirections(res);
       } catch(e) { console.warn('Route error', e); }
+
       if (!marker) marker = new google.maps.Marker({ map, title: label });
       marker.setPosition(dest);
 
-      // Визначаємо зону (без показу кілометрів і трас)
-      const zone = getZoneForPoint(dest);
+      const zone = evaluateCityLimits(dest);
       showResult(zone);
     }
 
     function showResult(zone){
       const mapEl = document.getElementById('map');
-      mapEl.classList.remove('unblur'); // карта та маршрут залишаються заблюреними
+      mapEl.classList.remove('unblur');
       const modal = document.getElementById('result-modal');
       const txt = document.getElementById('result-text');
-      if (zone === 'green') { txt.className = 'msg ok'; txt.textContent = 'Можна пропонувати безкоштовну доставку.'; }
-      else if (zone === 'yellow') { txt.className = 'msg warn'; txt.textContent = 'Потрібно уточнювати можливість безкоштовної доставки.'; }
+      if (zone === 'within50') { txt.className = 'msg warn'; txt.textContent = 'Потрібно уточнювати можливість безкоштовної доставки.'; }
       else { txt.className = 'msg no'; txt.textContent = 'Безкоштовну доставку пропонувати не можна.'; }
       modal.style.display = 'flex';
       document.getElementById('status').textContent = '';
     }
 
     function resetAll(){
-      // Очистка стану і повернення до стартової модалки
       document.getElementById('dest-input').value = '';
       if (marker) { marker.setMap(null); marker = null; }
       if (directionsRenderer) { directionsRenderer.setDirections({ routes: [] }); }
-      document.getElementById('map').classList.remove('unblur'); // знову блюр
+      document.getElementById('map').classList.remove('unblur');
       document.getElementById('result-modal').style.display = 'none';
       document.getElementById('status').className = 'badge warn';
       document.getElementById('status').textContent = 'Очікую вибір…';
@@ -185,49 +175,17 @@
 
     function closeStartModal(){ document.getElementById('start-modal').style.display = 'none'; }
 
-    async function buildCorridors() {
-      builtCorridors = [];
-      const dir = new google.maps.DirectionsService();
-      for (const req of CORRIDOR_REQUESTS) {
-        const res = await dir.route({ origin: req.origin, destination: req.destination, waypoints: (req.waypoints||[]).map(w=>({location:w})), travelMode: google.maps.TravelMode.DRIVING });
-        builtCorridors.push({ name: req.name, path: res.routes[0].overview_path });
+    function evaluateCityLimits(dest){
+      const pt = new google.maps.LatLng(dest);
+      let minDist = Infinity;
+      for (const city of CITY_LIMITS){
+        const cityLatLng = new google.maps.LatLng({lat: city.lat, lng: city.lng});
+        const d = google.maps.geometry.spherical.computeDistanceBetween(pt, cityLatLng);
+        if (d < minDist) minDist = d;
       }
-    }
-
-    function getZoneForPoint(latlng){
-      if (!builtCorridors.length) return 'yellow';
-      const pt = new google.maps.LatLng(latlng);
-      let minMeters = Infinity;
-      for (const corr of builtCorridors) {
-        const d = distanceToPolylineMeters(pt, corr.path);
-        if (d < minMeters) { minMeters = d; }
-      }
-      const km = Math.round(minMeters / 1000);
-      if (km <= DIST_THRESH.green_km) return 'green';
-      if (km <= DIST_THRESH.yellow_km) return 'yellow';
-      return 'red';
-    }
-
-    function distanceToPolylineMeters(point, pathLatLngs) {
-      let min = Infinity;
-      for (let i = 0; i < pathLatLngs.length - 1; i++) {
-        const a = pathLatLngs[i];
-        const b = pathLatLngs[i+1];
-        const d = distancePointToSegmentMeters(point, a, b);
-        if (d < min) min = d;
-      }
-      return min;
-    }
-
-    function distancePointToSegmentMeters(p, a, b) {
-      const toXY = ll => ({ x: ll.lng(), y: Math.log(Math.tan((Math.PI/4) + (ll.lat()*Math.PI/180)/2)) });
-      const P = toXY(p), A = toXY(a), B = toXY(b);
-      const ABx = B.x - A.x, ABy = B.y - A.y;
-      const APx = P.x - A.x, APy = P.y - A.y;
-      const ab2 = ABx*ABx + ABy*ABy || 1e-12;
-      let t = (APx*ABx + APy*ABy) / ab2; t = Math.max(0, Math.min(1, t));
-      const proj = new google.maps.LatLng((Math.atan(Math.sinh(A.y + ABy*t))*180/Math.PI),(A.x + ABx*t));
-      return google.maps.geometry.spherical.computeDistanceBetween(p, proj);
+      const km = Math.round(minDist/1000);
+      if (km <= 50) return 'within50';
+      return 'beyond';
     }
   </script>
 
