@@ -85,7 +85,7 @@
   <script>
     const BASE = { lat: 49.8397, lng: 24.0297 };
 
-    // Міста-коридори з лімітом 50 км
+    // Міста-коридори з лімітами
     const CITY_LIMITS = [
       { name: 'Луцьк', lat: 50.7472, lng: 25.3254 },
       { name: 'Рівне', lat: 50.6199, lng: 26.2516 },
@@ -156,7 +156,7 @@
       mapEl.classList.remove('unblur');
       const modal = document.getElementById('result-modal');
       const txt = document.getElementById('result-text');
-      if (zone === 'within50') { txt.className = 'msg warn'; txt.textContent = 'Потрібно уточнювати можливість безкоштовної доставки.'; }
+      if (zone === 'within20') { txt.className = 'msg warn'; txt.textContent = 'Потрібно уточнювати можливість безкоштовної доставки.'; }
       else { txt.className = 'msg no'; txt.textContent = 'Безкоштовну доставку пропонувати не можна.'; }
       modal.style.display = 'flex';
       document.getElementById('status').textContent = '';
@@ -184,7 +184,7 @@
         if (d < minDist) minDist = d;
       }
       const km = Math.round(minDist/1000);
-      if (km <= 50) return 'within50';
+      if (km <= 20) return 'within20';
       return 'beyond';
     }
   </script>
