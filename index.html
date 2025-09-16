@@ -51,18 +51,27 @@
       { name: 'H02 (Львів — Тернопіль)', origin: 'Львів, Україна', destination: 'Тернопіль, Україна', waypoints: [] }
     ];
 
-    let map, directionsService, directionsRenderer, marker;
+    let map, directionsService, marker;
     let builtCorridors = [];
 
     function initMap() {
       map = new google.maps.Map(document.getElementById('map'), {
         center: BASE,
-        zoom: 7,
+        zoom: 8,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        zoomControl: true,
+        styles: [
+          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+          { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
+          { featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'simplified' }] },
+          { featureType: 'road', elementType: 'geometry', stylers: [{ lightness: 30 }] }
+        ]
       });
 
       directionsService = new google.maps.DirectionsService();
-      directionsRenderer = new google.maps.DirectionsRenderer({ map });
-
       buildCorridors();
 
       const input = document.getElementById('dest-input');
@@ -86,13 +95,11 @@
     }
 
     function buildRoute(origin, destination, label) {
-      directionsService.route({
-        origin, destination, travelMode: google.maps.TravelMode.DRIVING
-      }).then(res => {
-        directionsRenderer.setDirections(res);
-        if (!marker) marker = new google.maps.Marker({ map });
-        marker.setPosition(destination);
-      });
+      // спрощений режим: без прокладання маршруту — лише маркер та центрування
+      if (!marker) marker = new google.maps.Marker({ map });
+      marker.setPosition(destination);
+      map.panTo(destination);
+      map.setZoom(9);
     }
 
     async function buildCorridors() {
@@ -107,7 +114,7 @@
         });
         const path = res.routes[0].overview_path;
         builtCorridors.push({ name: req.name, path });
-        new google.maps.Polyline({ map, path, strokeColor: '#666', strokeOpacity: 0.9, strokeWeight: 4 });
+        new google.maps.Polyline({ map, path, strokeColor: '#888', strokeOpacity: 0.6, strokeWeight: 2 });
       }
     }
 
