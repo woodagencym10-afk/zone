@@ -7,8 +7,8 @@
   <style>
     html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, 'Helvetica Neue', Arial; }
     #app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
-    .toolbar { display: grid; gap: 8px; grid-template-columns: 1fr auto auto; padding: 12px; border-bottom: 1px solid #eee; }
-    .pill { border: 1px solid #ddd; border-radius: 999px; padding: 10px 14px; }
+    .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #eee; align-items: center; }
+    .pill { flex: 1; border: 1px solid #ddd; border-radius: 999px; padding: 10px 14px; }
     .btn { border: 1px solid #0a7; border-radius: 10px; padding: 10px 14px; background: #0fa; cursor: pointer; }
     .btn:active { transform: translateY(1px); }
     .badge { padding: 6px 10px; border-radius: 999px; font-weight: 600; }
@@ -16,28 +16,26 @@
     .no { background:#fff1f0; color:#a11; border:1px solid #ffd1cf; }
     .warn { background:#fffbe6; color:#8a6d00; border:1px solid #ffe58f; }
     #map { width: 100%; height: 100%; }
-    .legend { position:absolute; bottom:12px; left:12px; background: #fff; border:1px solid #eee; border-radius:12px; padding:10px 12px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); }
-    .legend-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
-    .swatch { width:16px; height:16px; border-radius:4px; border:1px solid rgba(0,0,0,.2) }
+    .legend { position:absolute; bottom:12px; left:12px; background: #fff; border:1px solid #eee; border-radius:12px; padding:10px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); font-size: 14px; }
+    .legend-row { display:flex; align-items:center; gap:8px; margin:4px 0; }
+    .swatch { width:14px; height:14px; border-radius:3px; border:1px solid rgba(0,0,.2) }
   </style>
 </head>
 <body>
   <div id="app">
     <div class="toolbar">
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-        <span class="badge ok" title="Початкова точка">Старт: Львів</span>
-        <input id="dest-input" class="pill" placeholder="Введіть місце призначення (місто/селище)" />
-      </div>
+      <span class="badge ok">Старт: Львів</span>
+      <input id="dest-input" class="pill" placeholder="Введіть місце призначення" />
       <button id="locate" class="btn">Моє місцезнаходження</button>
-      <div id="status" class="badge warn">Введіть місце призначення…</div>
+      <div id="status" class="badge warn">Очікую вибір…</div>
     </div>
     <div id="map"></div>
   </div>
 
-  <div class="legend" id="legend">
-    <div class="legend-row"><div class="swatch" style="background:#a3d9a5"></div> До 50 км — зелена зона (безкоштовна доставка)</div>
-    <div class="legend-row"><div class="swatch" style="background:#ffd59e"></div> 50–100 км — жовта зона (уточнювати)</div>
-    <div class="legend-row"><div class="swatch" style="background:#f3a5a5"></div> >100 км — червона зона (безкоштовно не пропонувати)</div>
+  <div class="legend">
+    <div class="legend-row"><div class="swatch" style="background:#a3d9a5"></div> ≤50 км — зелена зона</div>
+    <div class="legend-row"><div class="swatch" style="background:#ffd59e"></div> 50–100 км — жовта зона</div>
+    <div class="legend-row"><div class="swatch" style="background:#f3a5a5"></div> >100 км — червона зона</div>
   </div>
 
   <script>
@@ -51,24 +49,22 @@
       { name: 'H02 (Львів — Тернопіль)', origin: 'Львів, Україна', destination: 'Тернопіль, Україна', waypoints: [] }
     ];
 
-    let map, directionsService, marker;
-    let builtCorridors = [];
+    let map, directionsService, marker, builtCorridors = [];
 
     function initMap() {
+      const bounds = new google.maps.LatLngBounds();
+      // координати для охоплення тільки чотирьох областей
+      bounds.extend({ lat: 50.75, lng: 22.0 }); // пн-зх
+      bounds.extend({ lat: 49.0, lng: 27.0 }); // пд-сх
+
       map = new google.maps.Map(document.getElementById('map'), {
         center: BASE,
-        zoom: 8,
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: false,
-        zoomControl: true,
-        styles: [
-          { featureType: 'poi', stylers: [{ visibility: 'off' }] },
-          { featureType: 'transit', stylers: [{ visibility: 'off' }] },
-          { featureType: 'road', elementType: 'labels.icon', stylers: [{ visibility: 'off' }] },
-          { featureType: 'administrative', elementType: 'labels', stylers: [{ visibility: 'simplified' }] },
-          { featureType: 'road', elementType: 'geometry', stylers: [{ lightness: 30 }] }
-        ]
+        zoom: 7,
+        disableDefaultUI: true,
+        restriction: {
+          latLngBounds: bounds,
+          strictBounds: true
+        }
       });
 
       directionsService = new google.maps.DirectionsService();
@@ -80,51 +76,40 @@
         const place = autocomplete.getPlace();
         if (!place.geometry) return;
         const dest = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-        buildRoute(BASE, dest, place.formatted_address || place.name);
         evaluateAgainstCorridors(dest, place.formatted_address || place.name);
+        placeMarker(dest);
       });
 
       document.getElementById('locate').addEventListener('click', () => {
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(pos => {
           const dest = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          buildRoute(BASE, dest, 'Моє місцезнаходження');
           evaluateAgainstCorridors(dest, 'Моє місцезнаходження');
+          placeMarker(dest);
         });
       });
     }
 
-    function buildRoute(origin, destination, label) {
-      // спрощений режим: без прокладання маршруту — лише маркер та центрування
+    function placeMarker(destination) {
       if (!marker) marker = new google.maps.Marker({ map });
       marker.setPosition(destination);
-      map.panTo(destination);
-      map.setZoom(9);
     }
 
     async function buildCorridors() {
       builtCorridors = [];
-      const dir = new google.maps.DirectionsService();
       for (const req of CORRIDOR_REQUESTS) {
-        const res = await dir.route({
+        const res = await directionsService.route({
           origin: req.origin,
           destination: req.destination,
           waypoints: (req.waypoints || []).map(w => ({ location: w })),
           travelMode: google.maps.TravelMode.DRIVING
         });
-        const path = res.routes[0].overview_path;
-        builtCorridors.push({ name: req.name, path });
-        new google.maps.Polyline({ map, path, strokeColor: '#888', strokeOpacity: 0.6, strokeWeight: 2 });
+        builtCorridors.push({ name: req.name, path: res.routes[0].overview_path });
       }
     }
 
     function evaluateAgainstCorridors(latlng, label) {
-      if (!builtCorridors.length) {
-        const s = document.getElementById('status');
-        s.className = 'badge warn';
-        s.textContent = 'Коридори ще не побудовані';
-        return;
-      }
+      if (!builtCorridors.length) return;
       const pt = new google.maps.LatLng(latlng);
       let minMeters = Infinity, nearestCorr = null;
       for (const corr of builtCorridors) {
@@ -135,13 +120,13 @@
       const status = document.getElementById('status');
       if (km <= DIST_THRESH.green_km) {
         status.className = 'badge ok';
-        status.textContent = `${label}: ${km} км від траси (${nearestCorr?.name}) — ЗЕЛЕНА зона: можна пропонувати безкоштовну доставку.`;
+        status.textContent = `${label}: ${km} км — ЗЕЛЕНА зона`;
       } else if (km <= DIST_THRESH.yellow_km) {
         status.className = 'badge warn';
-        status.textContent = `${label}: ${km} км від траси (${nearestCorr?.name}) — ЖОВТА зона: уточнювати.`;
+        status.textContent = `${label}: ${km} км — ЖОВТА зона`;
       } else {
         status.className = 'badge no';
-        status.textContent = `${label}: ${km} км від траси (${nearestCorr?.name}) — ЧЕРВОНА зона: безкоштовна доставка не пропонується.`;
+        status.textContent = `${label}: ${km} км — ЧЕРВОНА зона`;
       }
     }
 
