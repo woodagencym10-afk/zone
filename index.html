@@ -15,33 +15,85 @@
     .ok { background:#e8fff4; color:#116b3b; border:1px solid #b7f2d4; }
     .no { background:#fff1f0; color:#a11; border:1px solid #ffd1cf; }
     .warn { background:#fffbe6; color:#8a6d00; border:1px solid #ffe58f; }
-    #map { width: 100%; height: 100%; }
-    .legend { position:absolute; bottom:12px; left:12px; background: #fff; border:1px solid #eee; border-radius:12px; padding:10px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); font-size: 14px; }
-    .legend-row { display:flex; align-items:center; gap:8px; margin:4px 0; }
-    .swatch { width:14px; height:14px; border-radius:3px; border:1px solid rgba(0,0,.2) }
+    #mapwrap { position: relative; }
+    #map { width: 100%; height: 100%; filter: blur(3px) saturate(0.8); opacity: 0.5; transition: filter .25s ease, opacity .25s ease; }
+    #map.unblur { filter: none; opacity: 1; }
+
+    /* Модальне вікно */
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
+    .card { width: min(680px, 92vw); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 18px 18px 14px; }
+    .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    .row2 { display: grid; gap: 10px; grid-template-columns: 2fr 1fr; }
+    .label { font-size: 13px; color: #666; margin-bottom: 6px; }
+    .input { width: 100%; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size: 15px; }
+    .muted { color:#666; font-size:14px; }
+    .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:12px; }
+
+    /* Бокова панель результатів */
+    #side { position: absolute; right: 12px; top: 80px; width: 340px; max-width: calc(100vw - 24px); background:#fff; border:1px solid #eee; border-radius: 14px; box-shadow: 0 10px 24px rgba(0,0,0,.12); padding: 14px; z-index: 20; display:none; }
+    #side.show { display:block; }
+    .kv { display:flex; justify-content:space-between; gap:8px; margin:6px 0; }
+    .kv b { font-weight:600; }
+    .zone-ok { background:#e8fff4; border:1px solid #b7f2d4; color:#116b3b; padding:8px 10px; border-radius:10px; }
+    .zone-warn { background:#fffbe6; border:1px solid #ffe58f; color:#8a6d00; padding:8px 10px; border-radius:10px; }
+    .zone-no { background:#fff1f0; border:1px solid #ffd1cf; color:#a11; padding:8px 10px; border-radius:10px; }
   </style>
 </head>
 <body>
   <div id="app">
     <div class="toolbar">
-      <span class="badge ok">Старт: Львів</span>
+      <span class="badge ok">Старт: Склад Львів (вул. Кільцева, 60)</span>
       <input id="dest-input" class="pill" placeholder="Введіть місце призначення" />
       <button id="locate" class="btn">Моє місцезнаходження</button>
       <div id="status" class="badge warn">Очікую вибір…</div>
     </div>
-    <div id="map"></div>
+    <div id="mapwrap">
+      <div id="map"></div>
+      <div id="side">
+        <div class="kv"><span>Пункт призначення:</span><b id="s-dest">—</b></div>
+        <div class="kv"><span>Відстань маршрутом:</span><b id="s-dist">—</b></div>
+        <div class="kv"><span>Тривалість:</span><b id="s-dur">—</b></div>
+        <div id="s-zone" class="zone-warn" style="margin-top:8px;">—</div>
+      </div>
+    </div>
   </div>
 
-  <div class="legend">
-    <div class="legend-row"><div class="swatch" style="background:#a3d9a5"></div> ≤50 км — зелена зона</div>
-    <div class="legend-row"><div class="swatch" style="background:#ffd59e"></div> 50–100 км — жовта зона</div>
-    <div class="legend-row"><div class="swatch" style="background:#f3a5a5"></div> >100 км — червона зона</div>
+  <!-- Модальне вікно на старті -->
+  <div id="start-modal" class="modal">
+    <div class="card">
+      <h3 style="margin:0 0 8px 0">Початкові дані</h3>
+      <div class="row">
+        <div>
+          <div class="label">Початкова точка (статична)</div>
+          <input class="input" value="Склад Львів (вул. Кільцева, 60)" disabled />
+        </div>
+      </div>
+      <div class="row2" style="margin-top:8px;">
+        <div>
+          <div class="label">Місце призначення</div>
+          <input id="modal-dest" class="input" placeholder="Введіть місто/селище" />
+        </div>
+        <div>
+          <div class="label">Сума угоди, грн</div>
+          <input id="modal-sum" type="number" min="0" step="100" class="input" placeholder="Напр., 25000" />
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px;">Якщо сума угоди <b>менша 10 000 грн</b> — безкоштовна доставка неможлива.</div>
+      <div class="actions">
+        <button id="start-ok" class="btn">Продовжити</button>
+      </div>
+    </div>
   </div>
 
   <script>
-    const BASE = { lat: 49.8397, lng: 24.0297 }; // Львів
+    // Координати складу (наближені до Львова). За потреби можна геокодувати точну адресу.
+    const BASE = { lat: 49.8397, lng: 24.0297 };
+    const BASE_LABEL = 'Склад Львів (вул. Кільцева, 60)';
+
+    // Пороги зон
     const DIST_THRESH = { green_km: 50, yellow_km: 100 };
 
+    // Коридори-траси
     const CORRIDOR_REQUESTS = [
       { name: 'E40/M06 (Львів — Рівне)', origin: 'Львів, Україна', destination: 'Рівне, Україна', waypoints: ['Броди, Україна', 'Дубно, Україна'] },
       { name: 'H17 (Львів — Луцьк)', origin: 'Львів, Україна', destination: 'Луцьк, Україна', waypoints: ['Горохів, Україна'] },
@@ -49,11 +101,10 @@
       { name: 'H02 (Львів — Тернопіль)', origin: 'Львів, Україна', destination: 'Тернопіль, Україна', waypoints: [] }
     ];
 
-    let map, directionsService, marker, builtCorridors = [];
+    let map, directionsService, directionsRenderer, marker, builtCorridors = [];
 
     function initMap() {
       const bounds = new google.maps.LatLngBounds();
-      // координати для охоплення тільки чотирьох областей
       bounds.extend({ lat: 50.75, lng: 22.0 }); // пн-зх
       bounds.extend({ lat: 49.0, lng: 27.0 }); // пд-сх
 
@@ -61,38 +112,76 @@
         center: BASE,
         zoom: 7,
         disableDefaultUI: true,
-        restriction: {
-          latLngBounds: bounds,
-          strictBounds: true
-        }
+        restriction: { latLngBounds: bounds, strictBounds: true }
       });
 
       directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, polylineOptions: { strokeColor: '#1976d2', strokeOpacity: 0.8, strokeWeight: 4 } });
+
+      // Побудувати коридори для обчислення зон
       buildCorridors();
 
+      // Autocomplete у верхній панелі
       const input = document.getElementById('dest-input');
-      const autocomplete = new google.maps.places.Autocomplete(input, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace();
-        if (!place.geometry) return;
+      const ac = new google.maps.places.Autocomplete(input, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
+      ac.addListener('place_changed', () => {
+        const plc = ac.getPlace(); if (!plc.geometry) return;
+        handleDestination({
+          lat: plc.geometry.location.lat(),
+          lng: plc.geometry.location.lng()
+        }, plc.formatted_address || plc.name);
+      });
+
+      // Модальне вікно: автодоповнення для поля призначення
+      const mInput = document.getElementById('modal-dest');
+      const mac = new google.maps.places.Autocomplete(mInput, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
+
+      document.getElementById('start-ok').addEventListener('click', () => {
+        const sum = Number(document.getElementById('modal-sum').value || 0);
+        const place = mac.getPlace();
+        if (!place || !place.geometry) { alert('Введіть місце призначення.'); return; }
+        if (sum < 10000) {
+          alert('Неможлива безкоштовна доставка (сума угоди менша 10 000 грн).');
+        }
         const dest = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-        evaluateAgainstCorridors(dest, place.formatted_address || place.name);
-        placeMarker(dest);
+        handleDestination(dest, place.formatted_address || place.name);
+        closeStartModal();
       });
 
       document.getElementById('locate').addEventListener('click', () => {
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(pos => {
-          const dest = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          evaluateAgainstCorridors(dest, 'Моє місцезнаходження');
-          placeMarker(dest);
+          handleDestination({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'Моє місцезнаходження');
+          closeStartModal();
         });
       });
     }
 
-    function placeMarker(destination) {
-      if (!marker) marker = new google.maps.Marker({ map });
-      marker.setPosition(destination);
+    async function handleDestination(dest, label) {
+      // Маршрут для правої панелі
+      try {
+        const res = await directionsService.route({ origin: BASE, destination: dest, travelMode: google.maps.TravelMode.DRIVING });
+        directionsRenderer.setDirections(res);
+        const leg = res.routes[0].legs[0];
+        document.getElementById('s-dest').textContent = label;
+        document.getElementById('s-dist').textContent = leg.distance?.text || '—';
+        document.getElementById('s-dur').textContent = leg.duration?.text || '—';
+        document.getElementById('side').classList.add('show');
+      } catch(e) { console.warn('Route error', e); }
+
+      // Маркер на карті
+      if (!marker) marker = new google.maps.Marker({ map, title: label });
+      marker.setPosition(dest);
+
+      // Зняти блюр
+      document.getElementById('map').classList.add('unblur');
+
+      // Визначити зону
+      evaluateAgainstCorridors(dest, label);
+    }
+
+    function closeStartModal(){
+      const m = document.getElementById('start-modal'); if (m) m.style.display = 'none';
     }
 
     async function buildCorridors() {
@@ -118,15 +207,19 @@
       }
       const km = Math.round(minMeters / 1000);
       const status = document.getElementById('status');
+      const z = document.getElementById('s-zone');
       if (km <= DIST_THRESH.green_km) {
         status.className = 'badge ok';
         status.textContent = `${label}: ${km} км — ЗЕЛЕНА зона`;
+        z.className = 'zone-ok'; z.textContent = `ЗЕЛЕНА зона (≤ ${DIST_THRESH.green_km} км від трас: ${nearestCorr?.name}). Можна пропонувати безкоштовну доставку.`;
       } else if (km <= DIST_THRESH.yellow_km) {
         status.className = 'badge warn';
         status.textContent = `${label}: ${km} км — ЖОВТА зона`;
+        z.className = 'zone-warn'; z.textContent = `ЖОВТА зона (≈ ${km} км). Потрібно уточнювати можливість безкоштовної доставки.`;
       } else {
         status.className = 'badge no';
         status.textContent = `${label}: ${km} км — ЧЕРВОНА зона`;
+        z.className = 'zone-no'; z.textContent = `ЧЕРВОНА зона (> ${DIST_THRESH.yellow_km} км). Безкоштовну доставку пропонувати не можна.`;
       }
     }
 
