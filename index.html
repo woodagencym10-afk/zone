@@ -10,6 +10,7 @@
     .toolbar { display: flex; gap: 8px; padding: 12px; border-bottom: 1px solid #eee; align-items: center; }
     .pill { flex: 1; border: 1px solid #ddd; border-radius: 999px; padding: 10px 14px; }
     .btn { border: 1px solid #0a7; border-radius: 10px; padding: 10px 14px; background: #0fa; cursor: pointer; }
+    .btn.secondary { background:#f3f4f6; border-color:#d1d5db; }
     .btn:active { transform: translateY(1px); }
     .badge { padding: 6px 10px; border-radius: 999px; font-weight: 600; }
     .ok { background:#e8fff4; color:#116b3b; border:1px solid #b7f2d4; }
@@ -19,24 +20,20 @@
     #map { width: 100%; height: 100%; filter: blur(3px) saturate(0.8); opacity: 0.5; transition: filter .25s ease, opacity .25s ease; }
     #map.unblur { filter: none; opacity: 1; }
 
-    /* Модальне вікно */
+    /* Модалки */
     .modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
-    .card { width: min(680px, 92vw); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 18px 18px 14px; }
+    .card { width: min(640px, 92vw); background: #fff; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.15); padding: 18px; }
     .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
     .row2 { display: grid; gap: 10px; grid-template-columns: 2fr 1fr; }
     .label { font-size: 13px; color: #666; margin-bottom: 6px; }
     .input { width: 100%; border:1px solid #ddd; border-radius:10px; padding:10px 12px; font-size: 15px; }
-    .muted { color:#666; font-size:14px; }
     .actions { display:flex; justify-content:flex-end; gap:10px; margin-top:12px; }
 
-    /* Бокова панель результатів */
-    #side { position: absolute; right: 12px; top: 80px; width: 340px; max-width: calc(100vw - 24px); background:#fff; border:1px solid #eee; border-radius: 14px; box-shadow: 0 10px 24px rgba(0,0,0,.12); padding: 14px; z-index: 20; display:none; }
-    #side.show { display:block; }
-    .kv { display:flex; justify-content:space-between; gap:8px; margin:6px 0; }
-    .kv b { font-weight:600; }
-    .zone-ok { background:#e8fff4; border:1px solid #b7f2d4; color:#116b3b; padding:8px 10px; border-radius:10px; }
-    .zone-warn { background:#fffbe6; border:1px solid #ffe58f; color:#8a6d00; padding:8px 10px; border-radius:10px; }
-    .zone-no { background:#fff1f0; border:1px solid #ffd1cf; color:#a11; padding:8px 10px; border-radius:10px; }
+    /* Результат по центру */
+    #result-modal .msg { padding: 12px; border-radius: 12px; font-weight: 600; }
+    #result-modal .ok { background:#e8fff4; border:1px solid #b7f2d4; color:#116b3b; }
+    #result-modal .warn { background:#fffbe6; border:1px solid #ffe58f; color:#8a6d00; }
+    #result-modal .no { background:#fff1f0; border:1px solid #ffd1cf; color:#a11; }
   </style>
 </head>
 <body>
@@ -45,16 +42,11 @@
       <span class="badge ok">Старт: Склад Львів (вул. Кільцева, 60)</span>
       <input id="dest-input" class="pill" placeholder="Введіть місце призначення" />
       <button id="locate" class="btn">Моє місцезнаходження</button>
+      <button id="reset" class="btn secondary" title="Очистити та почати спочатку">Скинути</button>
       <div id="status" class="badge warn">Очікую вибір…</div>
     </div>
     <div id="mapwrap">
       <div id="map"></div>
-      <div id="side">
-        <div class="kv"><span>Пункт призначення:</span><b id="s-dest">—</b></div>
-        <div class="kv"><span>Відстань маршрутом:</span><b id="s-dist">—</b></div>
-        <div class="kv"><span>Тривалість:</span><b id="s-dur">—</b></div>
-        <div id="s-zone" class="zone-warn" style="margin-top:8px;">—</div>
-      </div>
     </div>
   </div>
 
@@ -78,22 +70,26 @@
           <input id="modal-sum" type="number" min="0" step="100" class="input" placeholder="Напр., 25000" />
         </div>
       </div>
-      <div class="muted" style="margin-top:6px;">Якщо сума угоди <b>менша 10 000 грн</b> — безкоштовна доставка неможлива.</div>
       <div class="actions">
         <button id="start-ok" class="btn">Продовжити</button>
       </div>
     </div>
   </div>
 
-  <script>
-    // Координати складу (наближені до Львова). За потреби можна геокодувати точну адресу.
-    const BASE = { lat: 49.8397, lng: 24.0297 };
-    const BASE_LABEL = 'Склад Львів (вул. Кільцева, 60)';
+  <!-- Модалка результату по центру -->
+  <div id="result-modal" class="modal" style="display:none;">
+    <div class="card">
+      <div id="result-text" class="msg ok">—</div>
+      <div class="actions">
+        <button id="new-query" class="btn secondary">Скинути</button>
+      </div>
+    </div>
+  </div>
 
-    // Пороги зон
+  <script>
+    const BASE = { lat: 49.8397, lng: 24.0297 };
     const DIST_THRESH = { green_km: 50, yellow_km: 100 };
 
-    // Коридори-траси
     const CORRIDOR_REQUESTS = [
       { name: 'E40/M06 (Львів — Рівне)', origin: 'Львів, Україна', destination: 'Рівне, Україна', waypoints: ['Броди, Україна', 'Дубно, Україна'] },
       { name: 'H17 (Львів — Луцьк)', origin: 'Львів, Україна', destination: 'Луцьк, Україна', waypoints: ['Горохів, Україна'] },
@@ -105,34 +101,26 @@
 
     function initMap() {
       const bounds = new google.maps.LatLngBounds();
-      bounds.extend({ lat: 50.75, lng: 22.0 }); // пн-зх
-      bounds.extend({ lat: 49.0, lng: 27.0 }); // пд-сх
+      bounds.extend({ lat: 50.75, lng: 22.0 });
+      bounds.extend({ lat: 49.0, lng: 27.0 });
 
       map = new google.maps.Map(document.getElementById('map'), {
-        center: BASE,
-        zoom: 7,
-        disableDefaultUI: true,
+        center: BASE, zoom: 7, disableDefaultUI: true,
         restriction: { latLngBounds: bounds, strictBounds: true }
       });
 
       directionsService = new google.maps.DirectionsService();
-      directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, polylineOptions: { strokeColor: '#1976d2', strokeOpacity: 0.8, strokeWeight: 4 } });
+      directionsRenderer = new google.maps.DirectionsRenderer({ map, suppressMarkers: true, polylineOptions: { strokeColor: '#1976d2', strokeOpacity: 0.7, strokeWeight: 4 } });
 
-      // Побудувати коридори для обчислення зон
       buildCorridors();
 
-      // Autocomplete у верхній панелі
       const input = document.getElementById('dest-input');
       const ac = new google.maps.places.Autocomplete(input, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
       ac.addListener('place_changed', () => {
         const plc = ac.getPlace(); if (!plc.geometry) return;
-        handleDestination({
-          lat: plc.geometry.location.lat(),
-          lng: plc.geometry.location.lng()
-        }, plc.formatted_address || plc.name);
+        proceedToDestination({ lat: plc.geometry.location.lat(), lng: plc.geometry.location.lng() }, plc.formatted_address || plc.name);
       });
 
-      // Модальне вікно: автодоповнення для поля призначення
       const mInput = document.getElementById('modal-dest');
       const mac = new google.maps.places.Autocomplete(mInput, { types: ['(cities)'], componentRestrictions: { country: 'ua' } });
 
@@ -140,87 +128,84 @@
         const sum = Number(document.getElementById('modal-sum').value || 0);
         const place = mac.getPlace();
         if (!place || !place.geometry) { alert('Введіть місце призначення.'); return; }
-        if (sum < 10000) {
-          alert('Неможлива безкоштовна доставка (сума угоди менша 10 000 грн).');
-        }
-        const dest = { lat: place.geometry.location.lat(), lng: place.geometry.location.lng() };
-        handleDestination(dest, place.formatted_address || place.name);
+        if (sum < 10000) { alert('Неможлива безкоштовна доставка (сума угоди менша 10 000 грн).'); }
+        proceedToDestination({ lat: place.geometry.location.lat(), lng: place.geometry.location.lng() }, place.formatted_address || place.name);
         closeStartModal();
       });
 
       document.getElementById('locate').addEventListener('click', () => {
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(pos => {
-          handleDestination({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'Моє місцезнаходження');
+          proceedToDestination({ lat: pos.coords.latitude, lng: pos.coords.longitude }, 'Моє місцезнаходження');
           closeStartModal();
         });
       });
+
+      document.getElementById('new-query').addEventListener('click', resetAll);
+      document.getElementById('reset').addEventListener('click', resetAll);
     }
 
-    async function handleDestination(dest, label) {
-      // Маршрут для правої панелі
+    async function proceedToDestination(dest, label){
+      // Прокладаємо маршрут (для фону) і розмиваємо карту
       try {
         const res = await directionsService.route({ origin: BASE, destination: dest, travelMode: google.maps.TravelMode.DRIVING });
         directionsRenderer.setDirections(res);
-        const leg = res.routes[0].legs[0];
-        document.getElementById('s-dest').textContent = label;
-        document.getElementById('s-dist').textContent = leg.distance?.text || '—';
-        document.getElementById('s-dur').textContent = leg.duration?.text || '—';
-        document.getElementById('side').classList.add('show');
       } catch(e) { console.warn('Route error', e); }
-
-      // Маркер на карті
       if (!marker) marker = new google.maps.Marker({ map, title: label });
       marker.setPosition(dest);
 
-      // Зняти блюр
-      document.getElementById('map').classList.add('unblur');
-
-      // Визначити зону
-      evaluateAgainstCorridors(dest, label);
+      // Визначаємо зону (без показу кілометрів і трас)
+      const zone = getZoneForPoint(dest);
+      showResult(zone);
     }
 
-    function closeStartModal(){
-      const m = document.getElementById('start-modal'); if (m) m.style.display = 'none';
+    function showResult(zone){
+      const mapEl = document.getElementById('map');
+      mapEl.classList.remove('unblur'); // карта та маршрут залишаються заблюреними
+      const modal = document.getElementById('result-modal');
+      const txt = document.getElementById('result-text');
+      if (zone === 'green') { txt.className = 'msg ok'; txt.textContent = 'Можна пропонувати безкоштовну доставку.'; }
+      else if (zone === 'yellow') { txt.className = 'msg warn'; txt.textContent = 'Потрібно уточнювати можливість безкоштовної доставки.'; }
+      else { txt.className = 'msg no'; txt.textContent = 'Безкоштовну доставку пропонувати не можна.'; }
+      modal.style.display = 'flex';
+      document.getElementById('status').textContent = '';
     }
+
+    function resetAll(){
+      // Очистка стану і повернення до стартової модалки
+      document.getElementById('dest-input').value = '';
+      if (marker) { marker.setMap(null); marker = null; }
+      if (directionsRenderer) { directionsRenderer.setDirections({ routes: [] }); }
+      document.getElementById('map').classList.remove('unblur'); // знову блюр
+      document.getElementById('result-modal').style.display = 'none';
+      document.getElementById('status').className = 'badge warn';
+      document.getElementById('status').textContent = 'Очікую вибір…';
+      document.getElementById('start-modal').style.display = 'flex';
+    }
+
+    function closeStartModal(){ document.getElementById('start-modal').style.display = 'none'; }
 
     async function buildCorridors() {
       builtCorridors = [];
+      const dir = new google.maps.DirectionsService();
       for (const req of CORRIDOR_REQUESTS) {
-        const res = await directionsService.route({
-          origin: req.origin,
-          destination: req.destination,
-          waypoints: (req.waypoints || []).map(w => ({ location: w })),
-          travelMode: google.maps.TravelMode.DRIVING
-        });
+        const res = await dir.route({ origin: req.origin, destination: req.destination, waypoints: (req.waypoints||[]).map(w=>({location:w})), travelMode: google.maps.TravelMode.DRIVING });
         builtCorridors.push({ name: req.name, path: res.routes[0].overview_path });
       }
     }
 
-    function evaluateAgainstCorridors(latlng, label) {
-      if (!builtCorridors.length) return;
+    function getZoneForPoint(latlng){
+      if (!builtCorridors.length) return 'yellow';
       const pt = new google.maps.LatLng(latlng);
-      let minMeters = Infinity, nearestCorr = null;
+      let minMeters = Infinity;
       for (const corr of builtCorridors) {
         const d = distanceToPolylineMeters(pt, corr.path);
-        if (d < minMeters) { minMeters = d; nearestCorr = corr; }
+        if (d < minMeters) { minMeters = d; }
       }
       const km = Math.round(minMeters / 1000);
-      const status = document.getElementById('status');
-      const z = document.getElementById('s-zone');
-      if (km <= DIST_THRESH.green_km) {
-        status.className = 'badge ok';
-        status.textContent = `${label}: ${km} км — ЗЕЛЕНА зона`;
-        z.className = 'zone-ok'; z.textContent = `ЗЕЛЕНА зона (≤ ${DIST_THRESH.green_km} км від трас: ${nearestCorr?.name}). Можна пропонувати безкоштовну доставку.`;
-      } else if (km <= DIST_THRESH.yellow_km) {
-        status.className = 'badge warn';
-        status.textContent = `${label}: ${km} км — ЖОВТА зона`;
-        z.className = 'zone-warn'; z.textContent = `ЖОВТА зона (≈ ${km} км). Потрібно уточнювати можливість безкоштовної доставки.`;
-      } else {
-        status.className = 'badge no';
-        status.textContent = `${label}: ${km} км — ЧЕРВОНА зона`;
-        z.className = 'zone-no'; z.textContent = `ЧЕРВОНА зона (> ${DIST_THRESH.yellow_km} км). Безкоштовну доставку пропонувати не можна.`;
-      }
+      if (km <= DIST_THRESH.green_km) return 'green';
+      if (km <= DIST_THRESH.yellow_km) return 'yellow';
+      return 'red';
     }
 
     function distanceToPolylineMeters(point, pathLatLngs) {
@@ -241,10 +226,7 @@
       const APx = P.x - A.x, APy = P.y - A.y;
       const ab2 = ABx*ABx + ABy*ABy || 1e-12;
       let t = (APx*ABx + APy*ABy) / ab2; t = Math.max(0, Math.min(1, t));
-      const proj = new google.maps.LatLng(
-        (Math.atan(Math.sinh(A.y + ABy*t))*180/Math.PI),
-        (A.x + ABx*t)
-      );
+      const proj = new google.maps.LatLng((Math.atan(Math.sinh(A.y + ABy*t))*180/Math.PI),(A.x + ABx*t));
       return google.maps.geometry.spherical.computeDistanceBetween(p, proj);
     }
   </script>
